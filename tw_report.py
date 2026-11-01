@@ -191,6 +191,18 @@ def main():
     tw = TimeWatch(company, employee, password)
     tw.login()
 
+    if dry:
+        # Diagnostic: show how the attendance page was read (dates and status only).
+        soup = BeautifulSoup(tw.month_page(), "html.parser")
+        rows = soup.find_all("tr", class_="update-data")
+        print(f"Attendance rows found: {len(rows)}")
+        for row in rows:
+            text = row.get_text(" ", strip=True)
+            dm = re.search(r"\d{2}-\d{2}-\d{4}", text)
+            if dm:
+                status = "MISSING" if MISSING_TEXT in text else "ok"
+                print(f"  {dm.group(0)}  {status}")
+
     failed = []
     for attempt in range(4):
         html = tw.month_page()
