@@ -1,0 +1,41 @@
+name: TimeWatch daily report
+
+on:
+  schedule:
+    # Sunday-Thursday at 17:07 UTC (19:07 Israel winter time, 20:07 summer time)
+    - cron: "7 17 * * 0-4"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run - only show what would be reported"
+        type: boolean
+        default: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Report hours
+        env:
+          TW_COMPANY: ${{ secrets.TW_COMPANY }}
+          TW_EMPLOYEE: ${{ secrets.TW_EMPLOYEE }}
+          TW_PASSWORD: ${{ secrets.TW_PASSWORD }}
+          START_TIME: ${{ vars.START_TIME }}
+          END_TIME: ${{ vars.END_TIME }}
+          DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: python tw_report.py
+      - name: Save debug pages on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug
+          path: debug/
+          if-no-files-found: ignore
+          retention-days: 3
