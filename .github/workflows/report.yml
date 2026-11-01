@@ -1,9 +1,10 @@
 name: TimeWatch daily report
 
 on:
-  schedule:
-    # Sunday-Thursday at 17:07 UTC (19:07 Israel winter time, 20:07 summer time)
-    - cron: "7 17 * * 0-4"
+  # Automatic daily run is OFF until the dry-run test passes.
+  # schedule:
+  #   # Sunday-Thursday at 17:07 UTC (19:07 Israel winter time, 20:07 summer time)
+  #   - cron: "7 17 * * 0-4"
   workflow_dispatch:
     inputs:
       dry_run:
