@@ -30,7 +30,8 @@ jobs:
           START_TIME: ${{ vars.START_TIME }}
           END_TIME: ${{ vars.END_TIME }}
           DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          # Test mode locked ON: nothing is ever sent to TimeWatch until this line is changed.
+          DRY_RUN: "true"
         run: python tw_report.py
       - name: Save debug pages on failure
         if: failure()
