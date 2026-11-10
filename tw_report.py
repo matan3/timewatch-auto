@@ -202,6 +202,15 @@ def main():
             if dm:
                 status = "MISSING" if MISSING_TEXT in text else "ok"
                 print(f"  {dm.group(0)}  {status}")
+        # Show the full row for one day (default: yesterday), read-only.
+        show = env("SHOW_DATE") or (today - timedelta(days=1)).strftime("%d-%m-%Y")
+        for row in rows:
+            cells = [c.get_text(" ", strip=True) for c in row.find_all("td")]
+            if cells and show in " ".join(cells):
+                print(f"Row for {show}:")
+                for i, c in enumerate(cells):
+                    if c:
+                        print(f"  [{i}] {c}")
 
     failed = []
     for attempt in range(4):
