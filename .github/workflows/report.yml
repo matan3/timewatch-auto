@@ -13,6 +13,10 @@ on:
         description: "Dry run - only show what would be reported"
         type: boolean
         default: true
+      inspect_dates:
+        description: "Read-only: show what is filled on these dates (YYYY-MM-DD, space separated)"
+        type: string
+        default: ""
       test_alert:
         description: "Send a test alert email (fails on purpose, changes nothing)"
         type: boolean
@@ -47,6 +51,7 @@ jobs:
           # Real updates only for a manual run with "Dry run" unticked. Scheduled runs are still test-only.
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && 'false' || 'true' }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
+          INSPECT_DATES: ${{ inputs.inspect_dates }}
           PROJECT_CODE: "94735"
           HOME_DAYS: "mon,wed"
         run: python tw_report.py
