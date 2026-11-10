@@ -37,6 +37,7 @@ jobs:
           TW_COMPANY: ${{ secrets.TW_COMPANY }}
           TW_EMPLOYEE: ${{ secrets.TW_EMPLOYEE }}
           TW_PASSWORD: ${{ secrets.TW_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           START_TIME: ${{ vars.START_TIME }}
           START_JITTER_MIN: ${{ vars.START_JITTER_MIN }}
           DAY_LENGTH: ${{ vars.DAY_LENGTH }}

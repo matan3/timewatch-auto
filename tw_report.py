@@ -223,6 +223,20 @@ def notify(alerts):
     print("ATTENTION - please check these days in TimeWatch:")
     for a in alerts:
         print(f"  ! {a}")
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    if topic:
+        try:
+            requests.post("https://ntfy.sh/", json={
+                "topic": topic,
+                "title": "TimeWatch – צריך לבדוק",
+                "message": "\n".join(alerts),
+                "priority": 4,
+                "tags": ["warning"],
+                "click": "https://github.com/matan3/timewatch-auto/actions",
+            }, timeout=15).raise_for_status()
+            print("Phone notification sent.")
+        except requests.RequestException as e:
+            print(f"Phone notification failed: {e}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
