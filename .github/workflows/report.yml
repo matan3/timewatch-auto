@@ -1,12 +1,11 @@
 name: TimeWatch daily report
 
 on:
-  # Automatic daily run is OFF until approved.
-  # schedule:
-  #   # Sunday-Thursday. Two triggers (16:50 and 17:50 UTC) so that one lands just
-  #   # before 20:00 Israel time in both winter and summer; the script skips the
-  #   # other one, then waits for a random minute between 20:00 and 21:00.
-  #   - cron: "50 16,17 * * 0-4"
+  schedule:
+    # Sunday-Thursday. Two triggers (16:50 and 17:50 UTC) so that one lands just
+    # before 20:00 Israel time in both winter and summer; the script skips the
+    # other one, then waits for a random minute between 20:00 and 21:00.
+    - cron: "50 16,17 * * 0-4"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -48,8 +47,8 @@ jobs:
           RUN_WINDOW: ${{ vars.RUN_WINDOW }}
           SCHEDULED: ${{ github.event_name == 'schedule' }}
           DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
-          # Real updates only for a manual run with "Dry run" unticked. Scheduled runs are still test-only.
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && 'false' || 'true' }}
+          # Scheduled runs report for real; manual runs follow the "Dry run" checkbox.
+          DRY_RUN: ${{ (github.event_name == 'schedule' || !inputs.dry_run) && 'false' || 'true' }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
           INSPECT_DATES: ${{ inputs.inspect_dates }}
           PROJECT_CODE: "94735"
