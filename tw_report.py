@@ -142,53 +142,58 @@ class TimeWatch:
                 out.append((d, n))
         return sorted(out)
 
-    def inspect_form(self, ds):
-        """Read-only. Print form field names and the selected/relevant options."""
+    def edit_form(self, ds):
+        """Read-only: load the edit form for a date (YYYY-MM-DD) and return its
+        fields exactly as a browser would submit them, plus the selected task text."""
         url = (f"{BASE}/punch/editwh2.php?ie={self.company}&e={self.employee_internal}"
                f"&d={ds}&jd={ds}&tl={self.employee_internal}")
         r = self.s.get(url, headers={"Referer": BASE + self.punch_path}, timeout=30)
+        r.raise_for_status()
         soup = BeautifulSoup(r.content.decode("utf-8", errors="replace"), "html.parser")
-        print(f"Form for {ds}: HTTP {r.status_code}")
-        keep = ("בית", "לקוח", "350", "משרד")
+        data, task0_text = {}, ""
+        for inp in soup.find_all("input"):
+            name, typ = inp.get("name"), (inp.get("type") or "text").lower()
+            if not name or typ in ("submit", "button", "image", "reset"):
+                continue
+            if typ in ("checkbox", "radio") and not inp.has_attr("checked"):
+                continue
+            data[name] = inp.get("value", "")
         for sel in soup.find_all("select"):
             opts = sel.find_all("option")
-            shown = [o for o in opts if o.has_attr("selected")
-                     or any(k in o.get_text() for k in keep)]
-            desc = ", ".join(
-                f"{o.get('value')}={'350-project' if '350' in o.get_text() else o.get_text(strip=True)}"
-                f"{'*' if o.has_attr('selected') else ''}" for o in shown)
-            print(f"  select {sel.get('name')} ({len(opts)} options): {desc}")
-        for inp in soup.find_all("input"):
-            name, typ = inp.get("name"), inp.get("type", "text")
-            if not name or typ in ("submit", "button"):
-                continue
-            val = inp.get("value", "")
-            if typ in ("radio", "checkbox"):
-                val += " (checked)" if inp.has_attr("checked") else ""
-            elif name in ("e", "tl", "c", "ie", "ee", "csrf_token"):
-                val = "***"
-            elif not re.fullmatch(r"[0-9:.\-]*", val):
-                val = "<text>"
-            print(f"  input {name} [{typ}] = {val}")
+            chosen = next((o for o in opts if o.has_attr("selected")), opts[0] if opts else None)
+            data[sel.get("name")] = chosen.get("value", "") if chosen else ""
+            if sel.get("name") == "task0" and chosen:
+                task0_text = chosen.get_text(strip=True)
+        if "ehh0" not in data or "c" not in data:
+            save_debug(f"form-{ds}.html", r.text)
+            raise TWError(f"Couldn't read the edit form for {ds}.")
+        return data, task0_text
 
-    def submit(self, d, start, end):
-        data = {
-            "e": self.employee_internal, "tl": self.employee_internal,
-            "c": self.company, "d": d.strftime("%Y-%m-%d"),
-            "csrf_token": self.csrf, "nextdate": "",
-            "excuse": "0", "teken": "", "remark": "",
-        }
-        for i in range(5):
-            data.update({f"emm{i}": "", f"ehh{i}": "", f"xmm{i}": "", f"xhh{i}": "",
-                         f"task{i}": "0", f"taskdescr{i}": "", f"what{i}": "1"})
+    def inspect_form(self, ds):
+        """Read-only. Print only what's needed: times, project code and location."""
+        data, task_text = self.edit_form(ds)
+        remark = data.get("remark", "")
+        remark = remark if remark in ("בית", "לקוח", "") else "<other text>"
+        print(f"  {ds}: {data.get('ehh0')}:{data.get('emm0')}-{data.get('xhh0')}:{data.get('xmm0')}"
+              f"  task0={data.get('task0')}{' (project 350)' if '(350)' in task_text else ''}"
+              f"  remark='{remark}'")
+
+    def submit(self, d, start, end, project, location, dry=False):
+        ds = d.strftime("%Y-%m-%d")
+        data, _ = self.edit_form(ds)
         data.update({
-            "ehh0": str(start[0]), "emm0": f"{start[1]:02d}",
-            "xhh0": str(end[0]), "xmm0": f"{end[1]:02d}",
+            "ehh0": f"{start[0]:02d}", "emm0": f"{start[1]:02d}",
+            "xhh0": f"{end[0]:02d}", "xmm0": f"{end[1]:02d}",
+            "task0": project, "remark": location,
         })
+        data.setdefault("csrf_token", self.csrf)
+        if dry:
+            return True
         headers = {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Origin": BASE,
-            "Referer": BASE + self.punch_path,
+            "Referer": (f"{BASE}/punch/editwh2.php?ie={self.company}&e={self.employee_internal}"
+                        f"&d={ds}&jd={ds}&tl={self.employee_internal}"),
         }
         r = self.s.post(UPDATE_URL, data=data, headers=headers, timeout=30)
         r.raise_for_status()
@@ -209,8 +214,10 @@ def main():
     employee = env("TW_EMPLOYEE", required=True)
     password = env("TW_PASSWORD", required=True)
     start = parse_hhmm(env("START_TIME", "09:00"), "START_TIME")
-    end_fixed = env("END_TIME")
-    end_fixed = parse_hhmm(end_fixed, "END_TIME") if end_fixed else None
+    end_fixed = env("END_TIME", "18:00")
+    end_fixed = parse_hhmm(end_fixed, "END_TIME") if end_fixed.lower() != "auto" else None
+    project = env("PROJECT_CODE", required=True)
+    home_days = {x.strip().lower()[:3] for x in env("HOME_DAYS", "mon,wed").split(",")}
     default_hours = parse_hhmm(env("DEFAULT_HOURS", "9:00"), "DEFAULT_HOURS")
     dry = env("DRY_RUN", "false").lower() in ("1", "true", "yes")
 
@@ -231,9 +238,11 @@ def main():
             if dm:
                 status = "MISSING" if MISSING_TEXT in text else "ok"
                 print(f"  {dm.group(0)}  {status}")
-        # Read-only: show the form fields of the edit page for a few past days,
-        # so we can learn the codes for project and work location.
-        for ds in (env("INSPECT_DATES") or "").split():
+        # Read-only: show how a few past days were reported (times, project, location).
+        dates = (env("INSPECT_DATES") or "").split()
+        if dates:
+            print("Past reports (read-only):")
+        for ds in dates:
             tw.inspect_form(ds)
 
     failed = []
@@ -249,11 +258,14 @@ def main():
         print(f"Days to fill: {len(jobs)}" if attempt == 0 else f"Retrying {len(jobs)} day(s)")
         for d, needed in jobs:
             end = end_fixed or add_time(start, needed)
-            label = f"{d}  {start[0]:02d}:{start[1]:02d} -> {end[0]:02d}:{end[1]:02d}"
+            location = "בית" if d.strftime("%a").lower() in home_days else "לקוח"
+            label = (f"{d} ({d.strftime('%a')})  {start[0]:02d}:{start[1]:02d} -> "
+                     f"{end[0]:02d}:{end[1]:02d}  location={location}")
             if dry:
+                tw.submit(d, start, end, project, location, dry=True)  # reads the form only
                 print(f"  [dry run] would report {label}")
                 continue
-            ok = tw.submit(d, start, end)
+            ok = tw.submit(d, start, end, project, location)
             print(f"  {'reported' if ok else 'REJECTED'} {label}")
             if not ok:
                 failed.append(d.strftime("%Y-%m-%d"))
