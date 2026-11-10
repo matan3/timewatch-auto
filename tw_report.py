@@ -185,10 +185,19 @@ class TimeWatch:
         """Read-only. Print only what's needed: times, project code and location."""
         data, task_text = self.edit_form(ds)
         remark = data.get("remark", "")
-        remark = remark if remark in ("בית", "לקוח", "") else "<other text>"
+        remark = remark if len(remark) <= 12 else "<long text>"
         print(f"  {ds}: {data.get('ehh0')}:{data.get('emm0')}-{data.get('xhh0')}:{data.get('xmm0')}"
-              f"  task0={data.get('task0')}{' (project 350)' if '(350)' in task_text else ''}"
-              f"  remark='{remark}'")
+              f"  project code={data.get('task0')}  remark='{remark}'")
+
+    def learn_from_past(self, d, weeks=4):
+        """Find the same weekday in recent weeks that was reported normally and
+        return (project_code, remark) from it, or None."""
+        for k in range(1, weeks + 1):
+            prev = (d - timedelta(days=7 * k)).isoformat()
+            data, _ = self.edit_form(prev)
+            if data.get("ehh0", "").strip() and data.get("excuse", "0").strip() in ("", "0"):
+                return data.get("task0", "0"), data.get("remark", ""), prev
+        return None
 
     def submit(self, d, start, end, project, location, dry=False):
         ds = d.strftime("%Y-%m-%d")
@@ -244,7 +253,8 @@ def push(title, message, priority=3, tag="white_check_mark"):
         requests.post("https://ntfy.sh/", json={
             "topic": topic, "title": title, "message": message,
             "priority": priority, "tags": [tag],
-            "click": "https://github.com/matan3/timewatch-auto/actions",
+            "click": (f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/"
+                      f"{os.environ.get('GITHUB_REPOSITORY', '')}/actions"),
         }, timeout=15).raise_for_status()
         print("Phone notification sent.")
     except requests.RequestException as e:
@@ -253,7 +263,8 @@ def push(title, message, priority=3, tag="white_check_mark"):
 
 def heb_line(d, start, end, location):
     return (f"{d:%d.%m} ({HEB_DAYS[d.weekday()]}) "
-            f"{start[0]:02d}:{start[1]:02d}–{end[0]:02d}:{end[1]:02d}, {location}")
+            f"{start[0]:02d}:{start[1]:02d}–{end[0]:02d}:{end[1]:02d}"
+            + (f", {location}" if location else ""))
 
 
 def notify(alerts):
@@ -284,8 +295,14 @@ def main():
     base_start = parse_hhmm(env("START_TIME", "09:00"), "START_TIME")
     jitter = int(env("START_JITTER_MIN", "20"))
     day_len = parse_hhmm(env("DAY_LENGTH", "9:00"), "DAY_LENGTH")
-    project = env("PROJECT_CODE", required=True)
-    home_days = {x.strip().lower()[:3] for x in env("HOME_DAYS", "mon,wed").split(",")}
+    # Project / location: fixed settings if given, otherwise copied from the
+    # same weekday in recent weeks (works for anyone without configuration).
+    project_fixed = env("PROJECT_CODE")
+    home_days_raw = env("HOME_DAYS")
+    home_days = ({x.strip().lower()[:3] for x in home_days_raw.split(",")}
+                 if home_days_raw else None)
+    home_text = env("HOME_TEXT", "בית")
+    office_text = env("OFFICE_TEXT", "לקוח")
     default_hours = parse_hhmm(env("DEFAULT_HOURS", "9:00"), "DEFAULT_HOURS")
     dry = env("DRY_RUN", "false").lower() in ("1", "true", "yes")
 
@@ -368,7 +385,19 @@ def main():
             rnd = random.Random(f"{ds}-{employee}")
             start = add_time(base_start, (0, rnd.randint(0, jitter)))
             end = add_time(start, day_len)
-            location = "בית" if d.strftime("%a").lower() in home_days else "לקוח"
+            project, location = project_fixed, None
+            if home_days is not None:
+                location = home_text if d.strftime("%a").lower() in home_days else office_text
+            if project is None or location is None:
+                learned = tw.learn_from_past(d)
+                if not learned:
+                    alerts.append(f"{ds} ({d:%a}): couldn't find a recent {d:%A} to copy "
+                                  "project/location from - please fill by hand")
+                    handled.add(ds)
+                    continue
+                print(f"  {ds}: copying project/location from {learned[2]}")
+                project = project if project is not None else learned[0]
+                location = location if location is not None else learned[1]
             label = (f"{ds} ({d:%a})  {start[0]:02d}:{start[1]:02d} -> "
                      f"{end[0]:02d}:{end[1]:02d}  location={location}")
             if dry:

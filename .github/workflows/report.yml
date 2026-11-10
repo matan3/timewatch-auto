@@ -55,8 +55,11 @@ jobs:
           DRY_RUN: ${{ (github.event_name == 'schedule' || !inputs.dry_run) && 'false' || 'true' }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
           INSPECT_DATES: ${{ inputs.inspect_dates }}
-          PROJECT_CODE: "94735"
-          HOME_DAYS: "mon,wed"
+          # Optional. If empty, project and location are copied from the same weekday last week.
+          PROJECT_CODE: ${{ vars.PROJECT_CODE }}
+          HOME_DAYS: ${{ vars.HOME_DAYS }}
+          HOME_TEXT: ${{ vars.HOME_TEXT }}
+          OFFICE_TEXT: ${{ vars.OFFICE_TEXT }}
         run: python tw_report.py
       - name: Keep the schedule alive
         # GitHub pauses scheduled workflows after 60 days without repo activity.
