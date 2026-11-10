@@ -32,6 +32,7 @@ jobs:
           DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
           # Test mode locked ON: nothing is ever sent to TimeWatch until this line is changed.
           DRY_RUN: "true"
+          INSPECT_DATES: "2026-11-08 2026-11-09"
         run: python tw_report.py
       - name: Save debug pages on failure
         if: failure()

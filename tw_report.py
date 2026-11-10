@@ -142,6 +142,35 @@ class TimeWatch:
                 out.append((d, n))
         return sorted(out)
 
+    def inspect_form(self, ds):
+        """Read-only. Print form field names and the selected/relevant options."""
+        url = (f"{BASE}/punch/editwh2.php?ie={self.company}&e={self.employee_internal}"
+               f"&d={ds}&jd={ds}&tl={self.employee_internal}")
+        r = self.s.get(url, headers={"Referer": BASE + self.punch_path}, timeout=30)
+        soup = BeautifulSoup(r.content.decode("utf-8", errors="replace"), "html.parser")
+        print(f"Form for {ds}: HTTP {r.status_code}")
+        keep = ("בית", "לקוח", "350", "משרד")
+        for sel in soup.find_all("select"):
+            opts = sel.find_all("option")
+            shown = [o for o in opts if o.has_attr("selected")
+                     or any(k in o.get_text() for k in keep)]
+            desc = ", ".join(
+                f"{o.get('value')}={'350-project' if '350' in o.get_text() else o.get_text(strip=True)}"
+                f"{'*' if o.has_attr('selected') else ''}" for o in shown)
+            print(f"  select {sel.get('name')} ({len(opts)} options): {desc}")
+        for inp in soup.find_all("input"):
+            name, typ = inp.get("name"), inp.get("type", "text")
+            if not name or typ in ("submit", "button"):
+                continue
+            val = inp.get("value", "")
+            if typ in ("radio", "checkbox"):
+                val += " (checked)" if inp.has_attr("checked") else ""
+            elif name in ("e", "tl", "c", "ie", "ee", "csrf_token"):
+                val = "***"
+            elif not re.fullmatch(r"[0-9:.\-]*", val):
+                val = "<text>"
+            print(f"  input {name} [{typ}] = {val}")
+
     def submit(self, d, start, end):
         data = {
             "e": self.employee_internal, "tl": self.employee_internal,
@@ -202,15 +231,10 @@ def main():
             if dm:
                 status = "MISSING" if MISSING_TEXT in text else "ok"
                 print(f"  {dm.group(0)}  {status}")
-        # Show the full row for one day (default: yesterday), read-only.
-        show = env("SHOW_DATE") or (today - timedelta(days=1)).strftime("%d-%m-%Y")
-        for row in rows:
-            cells = [c.get_text(" ", strip=True) for c in row.find_all("td")]
-            if cells and show in " ".join(cells):
-                print(f"Row for {show}:")
-                for i, c in enumerate(cells):
-                    if c:
-                        print(f"  [{i}] {c}")
+        # Read-only: show the form fields of the edit page for a few past days,
+        # so we can learn the codes for project and work location.
+        for ds in (env("INSPECT_DATES") or "").split():
+            tw.inspect_form(ds)
 
     failed = []
     for attempt in range(4):
