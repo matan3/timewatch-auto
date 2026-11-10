@@ -21,6 +21,10 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+  actions: write   # only for the keep-alive step below
+
 concurrency:
   group: timewatch-report
   cancel-in-progress: false
@@ -54,6 +58,12 @@ jobs:
           PROJECT_CODE: "94735"
           HOME_DAYS: "mon,wed"
         run: python tw_report.py
+      - name: Keep the schedule alive
+        # GitHub pauses scheduled workflows after 60 days without repo activity.
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/report.yml/enable" || true
       - name: Save debug pages on failure
         if: failure()
         uses: actions/upload-artifact@v4
