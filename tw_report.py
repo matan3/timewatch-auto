@@ -22,6 +22,7 @@ Settings come from environment variables (GitHub Secrets / Variables):
 """
 
 import os
+import random
 import re
 import sys
 import time
@@ -213,16 +214,32 @@ def main():
     company = env("TW_COMPANY", required=True)
     employee = env("TW_EMPLOYEE", required=True)
     password = env("TW_PASSWORD", required=True)
-    start = parse_hhmm(env("START_TIME", "09:00"), "START_TIME")
-    end_fixed = env("END_TIME", "18:00")
-    end_fixed = parse_hhmm(end_fixed, "END_TIME") if end_fixed.lower() != "auto" else None
+    base_start = parse_hhmm(env("START_TIME", "09:00"), "START_TIME")
+    jitter = int(env("START_JITTER_MIN", "20"))
+    day_len = parse_hhmm(env("DAY_LENGTH", "9:00"), "DAY_LENGTH")
     project = env("PROJECT_CODE", required=True)
     home_days = {x.strip().lower()[:3] for x in env("HOME_DAYS", "mon,wed").split(",")}
     default_hours = parse_hhmm(env("DEFAULT_HOURS", "9:00"), "DEFAULT_HOURS")
     dry = env("DRY_RUN", "false").lower() in ("1", "true", "yes")
 
-    today = datetime.now(TZ).date()
+    now = datetime.now(TZ)
+    today = now.date()
     print(f"Today (Israel): {today}  |  dry run: {dry}")
+
+    # Scheduled runs: start at a random minute inside the run window (Israel time).
+    if env("SCHEDULED", "false").lower() == "true":
+        win = env("RUN_WINDOW", "20:00-21:00")
+        w0, w1 = (parse_hhmm(x, "RUN_WINDOW") for x in win.split("-"))
+        w_start = now.replace(hour=w0[0], minute=w0[1], second=0, microsecond=0)
+        w_end = now.replace(hour=w1[0], minute=w1[1], second=0, microsecond=0)
+        if not (w_start - timedelta(minutes=45) <= now < w_end):
+            print(f"Outside the {win} window ({now:%H:%M}) - skipping this trigger.")
+            return 0
+        target = w_start + timedelta(seconds=random.randint(0, int((w_end - w_start).total_seconds()) - 60))
+        wait = (target - datetime.now(TZ)).total_seconds()
+        if wait > 0:
+            print(f"Waiting until {target:%H:%M} before reporting...")
+            time.sleep(wait)
 
     tw = TimeWatch(company, employee, password)
     tw.login()
@@ -257,7 +274,11 @@ def main():
             raise TWError("Some days are still missing after 3 tries - please check in the app.")
         print(f"Days to fill: {len(jobs)}" if attempt == 0 else f"Retrying {len(jobs)} day(s)")
         for d, needed in jobs:
-            end = end_fixed or add_time(start, needed)
+            # Random start between START_TIME and START_TIME+jitter (same for the
+            # same date, so a dry run shows exactly what a real run would send).
+            rnd = random.Random(f"{d.isoformat()}-{employee}")
+            start = add_time(base_start, (0, rnd.randint(0, jitter)))
+            end = add_time(start, day_len)
             location = "בית" if d.strftime("%a").lower() in home_days else "לקוח"
             label = (f"{d} ({d.strftime('%a')})  {start[0]:02d}:{start[1]:02d} -> "
                      f"{end[0]:02d}:{end[1]:02d}  location={location}")

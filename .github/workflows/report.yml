@@ -1,10 +1,12 @@
 name: TimeWatch daily report
 
 on:
-  # Automatic daily run is OFF until the dry-run test passes.
+  # Automatic daily run is OFF until approved.
   # schedule:
-  #   # Sunday-Thursday at 17:07 UTC (19:07 Israel winter time, 20:07 summer time)
-  #   - cron: "7 17 * * 0-4"
+  #   # Sunday-Thursday. Two triggers (16:50 and 17:50 UTC) so that one lands just
+  #   # before 20:00 Israel time in both winter and summer; the script skips the
+  #   # other one, then waits for a random minute between 20:00 and 21:00.
+  #   - cron: "50 16,17 * * 0-4"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -12,10 +14,14 @@ on:
         type: boolean
         default: true
 
+concurrency:
+  group: timewatch-report
+  cancel-in-progress: false
+
 jobs:
   report:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,11 +34,13 @@ jobs:
           TW_EMPLOYEE: ${{ secrets.TW_EMPLOYEE }}
           TW_PASSWORD: ${{ secrets.TW_PASSWORD }}
           START_TIME: ${{ vars.START_TIME }}
-          END_TIME: ${{ vars.END_TIME || '18:00' }}
+          START_JITTER_MIN: ${{ vars.START_JITTER_MIN }}
+          DAY_LENGTH: ${{ vars.DAY_LENGTH }}
+          RUN_WINDOW: ${{ vars.RUN_WINDOW }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
           DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
           # Test mode locked ON: nothing is ever sent to TimeWatch until this line is changed.
           DRY_RUN: "true"
-          INSPECT_DATES: "2026-11-05 2026-11-08 2026-11-09"
           PROJECT_CODE: "94735"
           HOME_DAYS: "mon,wed"
         run: python tw_report.py
