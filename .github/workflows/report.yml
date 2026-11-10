@@ -50,7 +50,6 @@ jobs:
           DAY_LENGTH: ${{ vars.DAY_LENGTH }}
           RUN_WINDOW: ${{ vars.RUN_WINDOW }}
           SCHEDULED: ${{ github.event_name == 'schedule' }}
-          DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
           # Scheduled runs report for real; manual runs follow the "Dry run" checkbox.
           DRY_RUN: ${{ (github.event_name == 'schedule' || !inputs.dry_run) && 'false' || 'true' }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
@@ -67,11 +66,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/report.yml/enable" || true
-      - name: Save debug pages on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug
-          path: debug/
-          if-no-files-found: ignore
-          retention-days: 3
