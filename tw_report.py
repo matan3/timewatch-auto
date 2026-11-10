@@ -192,13 +192,17 @@ class TimeWatch:
 
     def submit(self, d, start, end, project, location, dry=False):
         ds = d.strftime("%Y-%m-%d")
-        data, _ = self.edit_form(ds)
+        # Same minimal payload the TimeWatch web page sends (known-working shape).
+        data = {"e": self.employee_internal, "tl": self.employee_internal,
+                "c": self.company, "d": ds, "csrf_token": self.csrf, "nextdate": ""}
+        for i in range(5):
+            data.update({f"emm{i}": "", f"ehh{i}": "", f"xmm{i}": "", f"xhh{i}": "",
+                         f"task{i}": "0", f"taskdescr{i}": "", f"what{i}": "1"})
         data.update({
             "ehh0": f"{start[0]:02d}", "emm0": f"{start[1]:02d}",
             "xhh0": f"{end[0]:02d}", "xmm0": f"{end[1]:02d}",
-            "task0": project, "remark": location,
+            "task0": project, "excuse": "0", "teken": "", "remark": location,
         })
-        data.setdefault("csrf_token", self.csrf)
         if dry:
             return True
         headers = {
@@ -372,6 +376,7 @@ def main():
                 done_lines.append(heb_line(d, start, end, location))
                 handled.add(ds)
                 continue
+            tw.month_page()  # fresh csrf token right before sending
             ok = tw.submit(d, start, end, project, location)
             submitted.add(ds)
             print(f"  {'reported' if ok else 'REJECTED'} {label}")
