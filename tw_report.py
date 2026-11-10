@@ -114,7 +114,7 @@ class TimeWatch:
 
     @staticmethod
     def missing_days(html, today, default_hours):
-        """Return [(date, (hours, minutes))] for days up to today flagged as missing."""
+        """Return [(date, day_type)] for days up to today flagged as missing."""
         soup = BeautifulSoup(html, "html.parser")
         rows = soup.find_all("tr", class_="update-data") or soup.find_all("tr")
         jobs = []
@@ -128,13 +128,9 @@ class TimeWatch:
             d = date(int(dm.group(3)), int(dm.group(2)), int(dm.group(1)))
             if d > today:
                 continue
-            # Expected hours for the day: first H:MM / HH:MM value after the date.
-            after = text[dm.end():]
-            hm = re.search(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)", after)
-            needed = (int(hm.group(1)), int(hm.group(2))) if hm else default_hours
-            if needed == (0, 0):
-                needed = default_hours
-            jobs.append((d, needed))
+            cells = [c.get_text(" ", strip=True) for c in row.find_all("td")]
+            day_type = cells[2] if len(cells) > 2 else ""
+            jobs.append((d, day_type))
         # de-duplicate, keep order
         seen, out = set(), []
         for d, n in jobs:
@@ -170,6 +166,21 @@ class TimeWatch:
             raise TWError(f"Couldn't read the edit form for {ds}.")
         return data, task0_text
 
+    @staticmethod
+    def existing_problem(data):
+        """Return a reason if the day already has anything filled in, else None."""
+        times = [data.get(f"{k}{i}", "").strip() for i in range(5)
+                 for k in ("ehh", "emm", "xhh", "xmm")]
+        if any(times):
+            return "already has entry/exit times (manual report?)"
+        if data.get("excuse", "0").strip() not in ("", "0"):
+            return "has an absence reason (vacation/sick/etc.)"
+        if data.get("atype", "0").strip() not in ("", "0"):
+            return "has an absence type set"
+        if data.get("remark", "").strip():
+            return "already has a remark"
+        return None
+
     def inspect_form(self, ds):
         """Read-only. Print only what's needed: times, project code and location."""
         data, task_text = self.edit_form(ds)
@@ -201,6 +212,22 @@ class TimeWatch:
         if r.text.strip() == LIMITED_PUNCH:
             return False
         return True
+
+
+WORKDAY_TYPES = ("יום עבודה", "חמישי")
+
+
+def notify(alerts):
+    """Print alerts and add them to the GitHub run summary. A failed run makes
+    GitHub email the owner."""
+    print("ATTENTION - please check these days in TimeWatch:")
+    for a in alerts:
+        print(f"  ! {a}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as f:
+            f.write("### ⚠️ Please check these days in TimeWatch\n\n")
+            f.writelines(f"- {a}\n" for a in alerts)
 
 
 def add_time(start, dur):
@@ -262,41 +289,68 @@ def main():
         for ds in dates:
             tw.inspect_form(ds)
 
-    failed = []
+    failed, alerts, handled, submitted = [], [], set(), set()
     for attempt in range(4):
         html = tw.month_page()
-        jobs = [(d, n) for d, n in tw.missing_days(html, today, default_hours)
-                if d.strftime("%Y-%m-%d") not in failed]
+        jobs = [(d, t) for d, t in tw.missing_days(html, today, None)
+                if d.isoformat() not in handled]
         if not jobs:
             break
         if attempt == 3:
             save_debug("month.html", html)
             raise TWError("Some days are still missing after 3 tries - please check in the app.")
         print(f"Days to fill: {len(jobs)}" if attempt == 0 else f"Retrying {len(jobs)} day(s)")
-        for d, needed in jobs:
-            # Random start between START_TIME and START_TIME+jitter (same for the
-            # same date, so a dry run shows exactly what a real run would send).
-            rnd = random.Random(f"{d.isoformat()}-{employee}")
+        for d, day_type in jobs:
+            ds = d.isoformat()
+            if ds in submitted:
+                alerts.append(f"{ds} ({d:%a}): sent, but TimeWatch still shows it as missing")
+                handled.add(ds)
+                continue
+            if d.weekday() in (4, 5):  # Friday, Saturday - never filled
+                print(f"  skip {ds} ({d:%a}) - weekend")
+                handled.add(ds)
+                continue
+            if day_type not in WORKDAY_TYPES:
+                alerts.append(f"{ds} ({d:%a}): day type is '{day_type}', not a regular work day")
+                handled.add(ds)
+                continue
+            data, _ = tw.edit_form(ds)
+            problem = tw.existing_problem(data)
+            if problem:
+                alerts.append(f"{ds} ({d:%a}): {problem} - left untouched")
+                handled.add(ds)
+                continue
+            rnd = random.Random(f"{ds}-{employee}")
             start = add_time(base_start, (0, rnd.randint(0, jitter)))
             end = add_time(start, day_len)
             location = "בית" if d.strftime("%a").lower() in home_days else "לקוח"
-            label = (f"{d} ({d.strftime('%a')})  {start[0]:02d}:{start[1]:02d} -> "
+            label = (f"{ds} ({d:%a})  {start[0]:02d}:{start[1]:02d} -> "
                      f"{end[0]:02d}:{end[1]:02d}  location={location}")
             if dry:
-                tw.submit(d, start, end, project, location, dry=True)  # reads the form only
                 print(f"  [dry run] would report {label}")
+                handled.add(ds)
                 continue
             ok = tw.submit(d, start, end, project, location)
+            submitted.add(ds)
             print(f"  {'reported' if ok else 'REJECTED'} {label}")
             if not ok:
-                failed.append(d.strftime("%Y-%m-%d"))
+                failed.append(ds)
+                handled.add(ds)
             time.sleep(0.5)
         if dry:
-            return 0
+            break
         time.sleep(2)
 
     if failed:
-        raise TWError(f"TimeWatch refused these days, please fill them by hand: {', '.join(failed)}")
+        alerts.append(f"TimeWatch refused: {', '.join(failed)} - please fill by hand")
+    if alerts:
+        notify(alerts)
+        if not dry:
+            raise TWError("Some days need your attention (see above).")
+        return 0
+    if dry:
+        print("Dry run finished - nothing was sent.")
+        return 0
     print("Done - nothing missing up to today.")
     return 0
 
