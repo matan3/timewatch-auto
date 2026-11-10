@@ -209,7 +209,19 @@ class TimeWatch:
         }
         r = self.s.post(UPDATE_URL, data=data, headers=headers, timeout=30)
         r.raise_for_status()
-        if r.text.strip() == LIMITED_PUNCH:
+        txt = r.content.decode("utf-8", errors="replace")
+        brief = re.sub(r"\s+", " ", BeautifulSoup(txt, "html.parser").get_text(" ", strip=True))[:300]
+        print(f"    server reply (HTTP {r.status_code}, {len(txt)} chars): {brief or '<empty>'}")
+        if txt.strip() == LIMITED_PUNCH:
+            return False
+        # Verify by reading the form back.
+        time.sleep(1)
+        back, _ = self.edit_form(ds)
+        saved = (back.get("ehh0", "").lstrip("0") or "0", back.get("emm0", "").zfill(2),
+                 back.get("xhh0", "").lstrip("0") or "0", back.get("xmm0", "").zfill(2))
+        want = (str(start[0]), f"{start[1]:02d}", str(end[0]), f"{end[1]:02d}")
+        if saved != want:
+            print(f"    read-back mismatch: saved={saved} wanted={want}")
             return False
         return True
 
