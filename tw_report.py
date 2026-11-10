@@ -271,6 +271,10 @@ def main():
     tw = TimeWatch(company, employee, password)
     tw.login()
 
+    if env("TEST_ALERT", "false").lower() == "true":
+        notify(["Test alert - this is only a test, nothing was changed in TimeWatch."])
+        raise TWError("Test alert (intentional failure so GitHub sends an email).")
+
     if dry:
         # Diagnostic: show how the attendance page was read (dates and status only).
         soup = BeautifulSoup(tw.month_page(), "html.parser")
