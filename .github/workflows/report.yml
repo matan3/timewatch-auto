@@ -44,8 +44,8 @@ jobs:
           RUN_WINDOW: ${{ vars.RUN_WINDOW }}
           SCHEDULED: ${{ github.event_name == 'schedule' }}
           DEFAULT_HOURS: ${{ vars.DEFAULT_HOURS }}
-          # Test mode locked ON: nothing is ever sent to TimeWatch until this line is changed.
-          DRY_RUN: "true"
+          # Real updates only for a manual run with "Dry run" unticked. Scheduled runs are still test-only.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && 'false' || 'true' }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
           PROJECT_CODE: "94735"
           HOME_DAYS: "mon,wed"
