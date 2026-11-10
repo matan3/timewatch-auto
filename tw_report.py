@@ -217,26 +217,37 @@ class TimeWatch:
 WORKDAY_TYPES = ("יום עבודה", "חמישי")
 
 
+HEB_DAYS = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
+
+
+def push(title, message, priority=3, tag="white_check_mark"):
+    """Send a push notification to the phone via ntfy (if NTFY_TOPIC is set)."""
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    if not topic:
+        return
+    try:
+        requests.post("https://ntfy.sh/", json={
+            "topic": topic, "title": title, "message": message,
+            "priority": priority, "tags": [tag],
+            "click": "https://github.com/matan3/timewatch-auto/actions",
+        }, timeout=15).raise_for_status()
+        print("Phone notification sent.")
+    except requests.RequestException as e:
+        print(f"Phone notification failed: {e}")
+
+
+def heb_line(d, start, end, location):
+    return (f"{d:%d.%m} ({HEB_DAYS[d.weekday()]}) "
+            f"{start[0]:02d}:{start[1]:02d}–{end[0]:02d}:{end[1]:02d}, {location}")
+
+
 def notify(alerts):
     """Print alerts and add them to the GitHub run summary. A failed run makes
     GitHub email the owner."""
     print("ATTENTION - please check these days in TimeWatch:")
     for a in alerts:
         print(f"  ! {a}")
-    topic = os.environ.get("NTFY_TOPIC", "").strip()
-    if topic:
-        try:
-            requests.post("https://ntfy.sh/", json={
-                "topic": topic,
-                "title": "TimeWatch – צריך לבדוק",
-                "message": "\n".join(alerts),
-                "priority": 4,
-                "tags": ["warning"],
-                "click": "https://github.com/matan3/timewatch-auto/actions",
-            }, timeout=15).raise_for_status()
-            print("Phone notification sent.")
-        except requests.RequestException as e:
-            print(f"Phone notification failed: {e}")
+    push("TimeWatch – צריך לבדוק", "\n".join(alerts), priority=4, tag="warning")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
@@ -308,6 +319,7 @@ def main():
             tw.inspect_form(ds)
 
     failed, alerts, handled, submitted = [], [], set(), set()
+    done_lines = []
     for attempt in range(4):
         html = tw.month_page()
         jobs = [(d, t) for d, t in tw.missing_days(html, today, None)
@@ -346,11 +358,14 @@ def main():
                      f"{end[0]:02d}:{end[1]:02d}  location={location}")
             if dry:
                 print(f"  [dry run] would report {label}")
+                done_lines.append(heb_line(d, start, end, location))
                 handled.add(ds)
                 continue
             ok = tw.submit(d, start, end, project, location)
             submitted.add(ds)
             print(f"  {'reported' if ok else 'REJECTED'} {label}")
+            if ok:
+                done_lines.append(heb_line(d, start, end, location))
             if not ok:
                 failed.append(ds)
                 handled.add(ds)
@@ -358,6 +373,11 @@ def main():
         if dry:
             break
         time.sleep(2)
+
+    if done_lines:
+        title = "ניסיון – לא נשלח כלום ל-TimeWatch" if dry else "עדכנתי בהצלחה ✅"
+        prefix = "הייתי מדווח:\n" if dry else ""
+        push(title, prefix + "\n".join(done_lines), tag="test_tube" if dry else "white_check_mark")
 
     if failed:
         alerts.append(f"TimeWatch refused: {', '.join(failed)} - please fill by hand")
