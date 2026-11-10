@@ -204,8 +204,7 @@ class TimeWatch:
         headers = {
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "Origin": BASE,
-            "Referer": (f"{BASE}/punch/editwh2.php?ie={self.company}&e={self.employee_internal}"
-                        f"&d={ds}&jd={ds}&tl={self.employee_internal}"),
+            "Referer": BASE + self.punch_path,
         }
         r = self.s.post(UPDATE_URL, data=data, headers=headers, timeout=30)
         r.raise_for_status()
