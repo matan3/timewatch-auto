@@ -310,20 +310,29 @@ def main():
     today = now.date()
     print(f"Today (Israel): {today}  |  dry run: {dry}")
 
-    # Scheduled runs: start at a random minute inside the run window (Israel time).
+    # Scheduled runs. GitHub's scheduler is often late by hours (or skips a
+    # trigger), so the workflow fires several times and this decides what to do:
+    #   before the window  -> catch-up: fill only days before today
+    #   inside the window  -> wait for a random minute in the window, then fill
+    #   after the window   -> late trigger: fill right away
+    cutoff = today
     if env("SCHEDULED", "false").lower() == "true":
         win = env("RUN_WINDOW", "20:00-21:00")
         w0, w1 = (parse_hhmm(x, "RUN_WINDOW") for x in win.split("-"))
         w_start = now.replace(hour=w0[0], minute=w0[1], second=0, microsecond=0)
         w_end = now.replace(hour=w1[0], minute=w1[1], second=0, microsecond=0)
-        if not (w_start - timedelta(minutes=45) <= now < w_end):
-            print(f"Outside the {win} window ({now:%H:%M}) - skipping this trigger.")
-            return 0
-        target = w_start + timedelta(seconds=random.randint(0, int((w_end - w_start).total_seconds()) - 60))
-        wait = (target - datetime.now(TZ)).total_seconds()
-        if wait > 0:
-            print(f"Waiting until {target:%H:%M} before reporting...")
-            time.sleep(wait)
+        if now < w_start - timedelta(minutes=45):
+            cutoff = today - timedelta(days=1)
+            print(f"Before the {win} window ({now:%H:%M}) - catch-up only (days before today).")
+        elif now < w_end:
+            target = w_start + timedelta(
+                seconds=random.randint(0, int((w_end - w_start).total_seconds()) - 60))
+            wait = (target - datetime.now(TZ)).total_seconds()
+            if wait > 0:
+                print(f"Waiting until {target:%H:%M} before reporting...")
+                time.sleep(wait)
+        else:
+            print(f"Late trigger ({now:%H:%M}) - reporting now.")
 
     tw = TimeWatch(company, employee, password)
     tw.login()
@@ -354,7 +363,7 @@ def main():
     done_lines = []
     for attempt in range(4):
         html = tw.month_page()
-        jobs = [(d, t) for d, t in tw.missing_days(html, today, None)
+        jobs = [(d, t) for d, t in tw.missing_days(html, cutoff, None)
                 if d.isoformat() not in handled]
         if not jobs:
             break
