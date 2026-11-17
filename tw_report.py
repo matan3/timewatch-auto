@@ -310,27 +310,36 @@ def main():
     today = now.date()
     print(f"Today (Israel): {today}  |  dry run: {dry}")
 
-    # Scheduled runs. GitHub's scheduler is often late by hours (or skips a
-    # trigger), so the workflow fires several times and this decides what to do:
-    #   before the window  -> catch-up: fill only days before today
-    #   inside the window  -> wait for a random minute in the window, then fill
-    #   after the window   -> late trigger: fill right away
+    # Scheduled runs. GitHub's scheduler is often hours late or skips triggers,
+    # so the workflow fires every hour from the morning; whichever trigger
+    # arrives first waits (up to MAX_WAIT) for a random minute in the window.
+    #   long before the window -> catch-up only: fill days before today
+    #   before / in the window -> wait for a random minute in the window, then fill
+    #   after the window       -> late trigger: fill right away
     cutoff = today
     if env("SCHEDULED", "false").lower() == "true":
-        win = env("RUN_WINDOW", "20:00-21:00")
+        win = env("RUN_WINDOW", "19:00-20:00")
         w0, w1 = (parse_hhmm(x, "RUN_WINDOW") for x in win.split("-"))
         w_start = now.replace(hour=w0[0], minute=w0[1], second=0, microsecond=0)
         w_end = now.replace(hour=w1[0], minute=w1[1], second=0, microsecond=0)
-        if now < w_start - timedelta(minutes=45):
-            cutoff = today - timedelta(days=1)
-            print(f"Before the {win} window ({now:%H:%M}) - catch-up only (days before today).")
-        elif now < w_end:
+        max_wait = timedelta(hours=float(env("MAX_WAIT_HOURS", "5.5")))
+        if now < w_end:
             target = w_start + timedelta(
                 seconds=random.randint(0, int((w_end - w_start).total_seconds()) - 60))
-            wait = (target - datetime.now(TZ)).total_seconds()
-            if wait > 0:
-                print(f"Waiting until {target:%H:%M} before reporting...")
-                time.sleep(wait)
+            target = max(target, now)
+            if target - now > max_wait:
+                cutoff = today - timedelta(days=1)
+                print(f"Too early for the {win} window ({now:%H:%M}) - catch-up only (days before today).")
+            else:
+                # Don't sit and wait if today is already filled (e.g. by hand).
+                tw0 = TimeWatch(company, employee, password)
+                tw0.login()
+                if not any(d == today for d, _ in tw0.missing_days(tw0.month_page(), today, None)):
+                    print("Today is already filled - nothing to wait for.")
+                    cutoff = today - timedelta(days=1)
+                else:
+                    print(f"Waiting until {target:%H:%M} before reporting...")
+                    time.sleep(max(0, (target - datetime.now(TZ)).total_seconds()))
         else:
             print(f"Late trigger ({now:%H:%M}) - reporting now.")
 

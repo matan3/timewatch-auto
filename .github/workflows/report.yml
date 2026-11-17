@@ -2,10 +2,11 @@ name: TimeWatch daily report
 
 on:
   schedule:
-    # GitHub's scheduler can be hours late or skip a trigger, so fire several
-    # times; the script only reports once (it fills only days still missing).
-    # Evenings Sun-Thu, every hour 17:23-21:23 UTC (19:23-23:23 Israel winter time):
-    - cron: "23 17-21 * * 0-4"
+    # GitHub's scheduler can be hours late or skip triggers, so fire every hour
+    # from the morning (Sun-Thu, 04:23-17:23 UTC = 06:23-19:23 Israel winter time).
+    # The first trigger that arrives waits for a random minute between 19:00 and
+    # 20:00 Israel time; the rest find nothing to do.
+    - cron: "23 4-17 * * 0-4"
     # Next-morning catch-up Mon-Fri, 05:17 UTC (07:17 Israel), fills missed days only:
     - cron: "17 5 * * 1-5"
   workflow_dispatch:
@@ -38,7 +39,7 @@ concurrency:
 jobs:
   report:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
