@@ -18,6 +18,10 @@ on:
         description: "Read-only: show what is filled on these dates (YYYY-MM-DD, space separated)"
         type: string
         default: ""
+      scheduled:
+        description: "Behave like the daily run (random minute in the run window). Used by the external scheduler."
+        type: boolean
+        default: false
       test_alert:
         description: "Send a test alert email (fails on purpose, changes nothing)"
         type: boolean
@@ -51,7 +55,7 @@ jobs:
           START_JITTER_MIN: ${{ vars.START_JITTER_MIN }}
           DAY_LENGTH: ${{ vars.DAY_LENGTH }}
           RUN_WINDOW: ${{ vars.RUN_WINDOW }}
-          SCHEDULED: ${{ github.event_name == 'schedule' }}
+          SCHEDULED: ${{ github.event_name == 'schedule' || inputs.scheduled == true }}
           # Scheduled runs report for real; manual runs follow the "Dry run" checkbox.
           DRY_RUN: ${{ (github.event_name == 'schedule' || !inputs.dry_run) && 'false' || 'true' }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
