@@ -346,6 +346,10 @@ def main():
     tw = TimeWatch(company, employee, password)
     tw.login()
 
+    if env("TEST_PUSH", "false").lower() == "true":
+        push("בדיקת התראה 🔔", "אם אתה רואה את זה – ההתראות לאייפון עובדות.", tag="bell")
+        return 0
+
     if env("TEST_ALERT", "false").lower() == "true":
         notify(["Test alert - this is only a test, nothing was changed in TimeWatch."])
         raise TWError("Test alert (intentional failure so GitHub sends an email).")

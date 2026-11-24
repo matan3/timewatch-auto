@@ -23,6 +23,10 @@ on:
         description: "Behave like the daily run (random minute in the run window). Used by the external scheduler."
         type: boolean
         default: false
+      test_push:
+        description: "Send a test phone notification only (changes nothing)"
+        type: boolean
+        default: false
       test_alert:
         description: "Send a test alert email (fails on purpose, changes nothing)"
         type: boolean
@@ -59,6 +63,7 @@ jobs:
           SCHEDULED: ${{ github.event_name == 'schedule' || inputs.scheduled == true }}
           # Scheduled runs report for real; manual runs follow the "Dry run" checkbox.
           DRY_RUN: ${{ (github.event_name == 'schedule' || !inputs.dry_run) && 'false' || 'true' }}
+          TEST_PUSH: ${{ github.event_name == 'workflow_dispatch' && inputs.test_push }}
           TEST_ALERT: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
           INSPECT_DATES: ${{ inputs.inspect_dates }}
           # Optional. If empty, project and location are copied from the same weekday last week.
